@@ -3,13 +3,16 @@ name: Build APK
 on:
   push:
     branches: [master, main]
-  pull_request:
-    branches: [master, main]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,31 +22,50 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant execute permission for gradlew
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Build APK
-        run: ./gradlew assembleRelease
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          CI: true
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: reader-archive-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: my-reader-pro-debug
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: app/build/outputs/apk/debug/*.apk
           tag_name: v${{ github.run_number }}
-          name: Reader Archive v${{ github.run_number }}
+          name: My Reader Pro v${{ github.run_number }}
           body: |
             自动编译版本（含 TTS 同步翻页 + 云备份修复）
+            
+            修改内容：
+            - 听书时手动翻页，朗读自动跳转到新位置
+            - 未配置云账号时，备份不再显示失败错误
+            
+            下载 APK 安装即可使用。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
